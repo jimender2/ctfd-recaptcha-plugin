@@ -30,6 +30,8 @@ class CaptchaProvider(ABC):
             return ReCaptchaProvider
         if string.lower() in ['intuition machines', 'hcaptcha', 'h']:
             return HCaptchaProvider
+        if string.lower() in ['cloudflare']:
+            return CloudflareProvider
 
         raise ValueError('{!r} could not be parsed as a captcha provider')
 
@@ -150,4 +152,47 @@ class HCaptchaProvider(CaptchaProvider):
                 raise VerificationError()
             data['remoteip'] = remote_ip
 
+        return data
+
+class CloudflareProvider(CaptchaProvider):
+    verification_url = 'https://challenges.cloudflare.com/turnstile/v0/siteverify'
+    response_form_key = 'cf-turnstile-response'
+
+    def __init__(self, site_key, secret, verify_remote_ip=False):
+        self.site_key = site_key
+        self.secret = secret
+        self.verify_remote_ip = verify_remote_ip
+
+    def script_tag(self):
+        return etree.Element(
+            'script',
+            attrib = {
+                'src': 'https://challenges.cloudflare.com/turnstile/v0/api.js',
+                'async': 'true',
+                'defer': 'true'
+            }
+        )
+
+    def challenge_tag(self):
+        return etree.Element(
+            'div',
+            attrib = {
+                'class': 'cf-turnstile',
+                'data-sitekey': self.site_key,
+            }
+        )
+
+    def post_data(self, response, remote_ip=None):
+        data = {
+            'secret': self.secret,
+            'sitekey': self.site_key,
+            'response': response,
+        }
+
+        if self.verify_remote_ip:
+            if remote_ip is None:
+                logger.error("Configured to verify remote IP, but remote IP was not provided.")
+                raise VerificationError()
+            data['remoteip'] = remote_ip
+    
         return data
